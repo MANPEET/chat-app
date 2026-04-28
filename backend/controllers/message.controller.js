@@ -40,6 +40,8 @@ export const getMessages = async (req, res) => {
           group: msg.group,
           audio: msg.audio,
           sender: msg.senderId, 
+          isDelivered: msg.isDelivered, 
+          readAt: msg.readAt
       }));
 
     res.status(200).json(formattedMessages);
@@ -81,6 +83,13 @@ export const sendMessage = async (req, res) => {
 
     await newMessage.save();
 
+    const receiverSocketId =  getReceiverSocketId(receiverId);
+
+    if(receiverSocketId){
+      newMessage.isDelivered = true;
+      await newMessage.save();
+    }
+
     const populatedMessage = await Message.findById(newMessage._id).populate("senderId", "fullName profilePic")
 
     
@@ -89,12 +98,21 @@ export const sendMessage = async (req, res) => {
         text: populatedMessage.text,
         image: populatedMessage.image,
         createdAt: populatedMessage.createdAt,
+        audio: populatedMessage.audio,
         sender: populatedMessage.senderId, 
+        isDelivered: populatedMessage.isDelivered, 
+        readAt: populatedMessage.readAt,
     };
 
-    const receiverSocketId = getReceiverSocketId(receiverId);
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", formattedMessage);
+
+      const senderSocketId = getReceiverSocketId(populatedMessage.senderId.toString())
+      if(senderSocketId){
+        io.to(senderSocketId).emit("messageDelivered", {
+          messageId: newMessage._id
+        })
+      }
     }
 
     res.status(201).json(formattedMessage);
@@ -166,7 +184,7 @@ export const handleDelivery = async(socket, io) => {
     await message.save();
 
     //We are fetching the socketId for the sender
-    const senderSocketId = await getReceiverSocketId(message.senderId.toString())
+    const senderSocketId =  getReceiverSocketId(message.senderId.toString())
 
     if(senderSocketId){
       
@@ -195,7 +213,7 @@ export const handleDelivery = async(socket, io) => {
       message.isDelivered = true;  // If let's say the message is not delivered
       await message.save()
 
-      const senderSocketId = await getReceiverSocketId(message.senderId?.toString())
+      const senderSocketId =  getReceiverSocketId(message.senderId?.toString())
 
       //Now letting the sender know hey this person just seen your message
       io.to(senderSocketId).emit("messageRead", {

@@ -75,7 +75,7 @@ export const useChatStore = create((set,get) => ({
             const selectedUsers = get().selectedUsers
 
             if (message.sender._id === authUser._id) return
-            if (message.sender._id !== selectedUsers._id) return
+            if (String(message.sender._id) !== String(selectedUsers._id)) return
 
             set((state) => ({
                 messages: [...state.messages, message],
@@ -94,17 +94,17 @@ export const useChatStore = create((set,get) => ({
 
         socket.on("messageDelivered", ({messageId}) => {
             set((state) => ({
-                messages: state.messages.map((msg) => {
+                messages: state.messages.map((msg) => 
                     msg._id === messageId ? {...msg, isDelivered: true} : msg
-                })
+                )
             }))
         })
 
         socket.on("messageRead", ({messageId, readAt}) => {
             set((state) => ({
-                messages: state.messages.map((msg) => {
+                messages: state.messages.map((msg) => 
                     msg._id === messageId ? {...msg, readAt, isDelivered: true} : msg
-                })
+                )
             }))
         })
     },

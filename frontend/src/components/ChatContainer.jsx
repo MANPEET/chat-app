@@ -7,6 +7,7 @@ import formatTimeMessage from "../lib/utils"
 import useGroupStore from "../store/useGroupStore"
 import AudioMessage from "./AudioMessage"
 import TypingIndicator from "./TypingIndicator"
+import { Check, CheckCheck } from "lucide-react"
 
 const ChatContainer = () => {
     const { messages, getMessages, selectedUsers, isMessagesLoading, subscribeToMessages, unsubscribeFromMessages } = useChatStore()
@@ -52,7 +53,7 @@ const ChatContainer = () => {
     useEffect(() => {
         if(!socket || !selectedUsers._id) return;
 
-        socket.on("markMessageAsRead", {chatId : selectedUsers._id})
+        socket.emit("markMessageAsRead", {chatId : selectedUsers._id})
 
     }, [socket, selectedUsers?._id])
 
@@ -80,13 +81,30 @@ const ChatContainer = () => {
         setTypingUsers([]);
     }, [selectedUsers?._id]);
 
+
+    const renderTicks = (message) => {
+        const isMine = message.sender?._id === authUser._id;
+        if(!isMine) return null
+
+        if(message.readAt){
+            return <CheckCheck size={14} className="inline ml-3 text-blue-600" />
+        }
+        else if(message.isDelivered){
+            return <CheckCheck size={14} className="inline ml-3 text-gray-400" />
+        }
+        else{
+            return <Check size={14} className="inline ml-3 text-gray-400" />
+        }
+    }
+
+
     return (
         <div className="flex flex-col overflow-auto flex-1 relative w-full">
             <ChatHeader />
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.map((message) => {
                     const isMine = authUser?._id && message.sender?._id === authUser._id;
-
+                   
                     return (
                         <div
                             key={message._id}
@@ -128,7 +146,9 @@ const ChatContainer = () => {
 
                             <div className="chat-footer">
                                 <time className="text-xs opacity-50 ml-1">{formatTimeMessage(message.createdAt)}</time>
+                                {renderTicks(message)}
                             </div>
+                            
                         </div>
                     )
                 })}
