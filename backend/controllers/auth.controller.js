@@ -36,7 +36,7 @@ export const signUp = async(req,res) => {
             await newUser.save()
 
             res.status(201).json({
-                id: newUser._id,
+                _id: newUser._id,
                 email:newUser.email,
                 fullName: newUser.fullName
             })
@@ -44,34 +44,45 @@ export const signUp = async(req,res) => {
         else{
             res.status(400).json({message: "Invalid User Data"})
         }
-        console.log(db.users.getIndexes());
     } catch (error) {
-        console.error(error)
+        console.log(error)
     }
 }
 
+
+
 export const login = async(req,res) =>{
-    const {email,password} = req.body
+    try {
+        const {email,password} = req.body
 
-    if(!email || !password){
-        return res.status(400).json({message: "All fields are required"})
+        if(!email || !password){
+            return res.status(400).json({message: "All fields are required"})
+        }
+
+        const user = await User.findOne({email})
+
+        if(!user){
+            return res.status(400).json({message: "No user found"})
+        }
+
+        const isPasswordCorrect = await bcrypt.compare(password,user.password)
+
+        if(!isPasswordCorrect){
+            return res.status(400).json({message: "Password is incorrect"})
+        }
+
+        generateTokenAndSetCookie(user._id,res)
+
+        return res.status(200).json({
+            _id: user._id,
+            email: user.email,
+            fullName: user.fullName,
+            profilePic: user.profilePic
+        })
+    } catch (error) {
+        res.status(500).json({message: error.message})
+        console.log(`Error in Login: ${error.message}`)
     }
-
-    const user = await User.findOne({email})
-
-    if(!user){
-        return res.status(400).json({message: "No user found"})
-    }
-
-    const isPasswordCorrect = await bcrypt.compare(password,user.password)
-
-    if(!isPasswordCorrect){
-        return res.status(400).json({message: "Password is incorrect"})
-    }
-
-    generateTokenAndSetCookie(user._id,res)
-
-    return res.status(200).json("user logged in successfully")
 }
 
 export const logout = (req,res) =>{
@@ -115,3 +126,4 @@ export const checkAuth = (req,res) =>{
         return res.status(500).json({message:"Internal server Error"})
     }
 }
+

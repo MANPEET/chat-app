@@ -10,12 +10,25 @@ const messageSchema = mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
     },
+    receivers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+      }
+    ],
     text: {
         type: String,
     },
     image: {
         type: String,
     },
+    audio: {
+        type: String,
+    },
+    group:{
+        type:mongoose.Schema.Types.ObjectId,
+        ref: "Group"
+    }
 }, { timestamps: true });
 
 const Message = mongoose.model("Message", messageSchema);

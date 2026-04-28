@@ -1,71 +1,133 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import useChatStore from "../store/useChatStore"
 import ChatHeader from "./ChatHeader"
 import MessageInput from "./MessageInput"
 import { useAuthStore } from "../store/useAuthStore"
 import formatTimeMessage from "../lib/utils"
+import useGroupStore from "../store/useGroupStore"
+import AudioMessage from "./AudioMessage"
+import TypingIndicator from "./TypingIndicator"
 
-const ChatContainer = () =>{
-    const {messages,getMessages,selectedUsers,isMessagesLoading, subscribeToMessages, unsubscribeFromMessages} = useChatStore()
-    const {authUser} = useAuthStore()
+const ChatContainer = () => {
+    const { messages, getMessages, selectedUsers, isMessagesLoading, subscribeToMessages, unsubscribeFromMessages } = useChatStore()
+    const { authUser, socket } = useAuthStore()
+    const { groups, getGroupMessage } = useGroupStore()
+    const [typingUsers, setTypingUsers] = useState([]);
 
     const messageEndRef = useRef()
 
-    useEffect(() =>{
-        getMessages(selectedUsers._id)
+    if (!authUser || !authUser._id) return null
 
-        subscribeToMessages()
-
-        return () => unsubscribeFromMessages()
-    },[selectedUsers._id,getMessages,subscribeToMessages, unsubscribeFromMessages])
+    const isGroupChat = selectedUsers?.members
 
     useEffect(() => {
-        if(messageEndRef.current && messages){
-            messageEndRef.current.scrollIntoView("smooth")
-        }
-    },[messages])
+        if (!selectedUsers?._id) return;
 
-    return(
+        const loadAndSubscribe = async () => {
+            if (selectedUsers.members) {
+                await getGroupMessage(selectedUsers._id);
+            } else {
+                await getMessages(selectedUsers._id);
+            }
+            subscribeToMessages();
+        }
+
+        loadAndSubscribe();
+        return () => unsubscribeFromMessages();
+    }, [selectedUsers?._id]);
+
+    useEffect(() => {
+        if (socket && groups.length > 0) {
+            const groupIds = groups.map(g => g._id);
+            socket.emit("joinGroups", groupIds);
+        }
+    }, [socket, groups]);
+
+    useEffect(() => {
+        if (messageEndRef.current && messages) {
+            messageEndRef.current.scrollIntoView({ behavior: "smooth" })
+        }
+    }, [messages])
+
+    useEffect(() => {
+        if (!socket) return;
+
+        socket.on("userTyping", ({ userId, user }) => {
+            setTypingUsers(prev => {
+                if (prev.find(u => u._id === userId)) return prev;
+                return [...prev, user];
+            });
+        });
+
+        socket.on("userStoppedTyping", ({ userId }) => {
+            setTypingUsers(prev => prev.filter(u => u._id !== userId));
+        });
+
+        return () => {
+            socket.off("userTyping");
+            socket.off("userStoppedTyping");
+        };
+    }, [socket]);
+
+    useEffect(() => {
+        setTypingUsers([]);
+    }, [selectedUsers?._id]);
+
+    return (
         <div className="flex flex-col overflow-auto flex-1 relative w-full">
-            <ChatHeader/>
+            <ChatHeader />
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.map((message) =>{
-                    return(
-                        <div 
+                {messages.map((message) => {
+                    const isMine = authUser?._id && message.sender?._id === authUser._id;
+
+                    return (
+                        <div
                             key={message._id}
-                            className={`chat ${isMessagesLoading ? "animate-pulse" : ""} ${message.senderId === authUser._id ? "chat-end" : "chat-start"}`}
-                            ref={messageEndRef}
+                            className={`chat ${isMessagesLoading ? "animate-pulse" : ""} ${isMine ? "chat-end" : "chat-start"}`}
                         >
                             <div className="chat-image avatar">
                                 <div className="size-10 rounded-full border">
-                                    <img 
+                                    <img
                                         src={
-                                            message.senderId === authUser._id 
-                                            ? authUser.profilePic || "/avatar.png"
-                                            : selectedUsers.profilePic || "/avatar.png"
+                                            isMine
+                                                ? authUser.profilePic || "/avatar.png"
+                                                : isGroupChat
+                                                    ? message.sender?.profilePic || "/avatar.png"
+                                                    : selectedUsers.profilePic || "/avatar.png"
                                         }
                                         alt="Profile Pic"
                                     />
                                 </div>
                             </div>
                             <div className="chat-header mb-1">
-                                    <time className="text-xs opacity-50 ml-1">{formatTimeMessage(message.createdAt)}</time>
+                                {!isMine && (
+                                    <span className="text-xs opacity-50 ml-1">~{message?.sender?.fullName}</span>
+                                )}
                             </div>
 
                             <div className="chat-bubble flex flex-col">
                                 {message.image && (
-                                    <img 
+                                    <img
                                         src={message.image}
                                         alt="Attachment"
                                         className="sm:max-w-[200px] rounded-md mb-2"
                                     />
                                 )}
+                                {message.audio && (
+                                    <AudioMessage src={message.audio} />
+                                )}
                                 {message.text && <p>{message.text}</p>}
-                            </div>           
+                            </div>
+
+                            <div className="chat-footer">
+                                <time className="text-xs opacity-50 ml-1">{formatTimeMessage(message.createdAt)}</time>
+                            </div>
                         </div>
                     )
-                    
                 })}
+                <TypingIndicator typingUsers={typingUsers} isGroupChat={isGroupChat} />
+
+                <div ref={messageEndRef} />
             </div>
             <MessageInput />
         </div>

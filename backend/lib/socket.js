@@ -1,6 +1,8 @@
 import {Server} from "socket.io"
 import express from "express"
 import http from "http"
+import { handleTyping } from "../controllers/message.controller.js"
+import User from "../models/userSchema.js"
 
 const app = express()
 const server = http.createServer(app)
@@ -11,22 +13,34 @@ const io = new Server(server, {
     }
 })
 
-//use to store online users
-const userSocketMap={}
+const userSocketMap = {}
 
 export function getReceiverSocketId(userId) {
     return userSocketMap[userId];
-  }
-  
-  
-io.on("connection", (socket) => {
+}
+
+io.on("connection", async (socket) => {
     console.log("A user connected", socket.id);
 
     const userId = socket.handshake.query.userId;
-    if (userId) userSocketMap[userId] = socket.id;
+    if (!userId) return;
 
-    // io.emit() is used to send events to all the connected clients
+    userSocketMap[userId] = socket.id;
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
+
+
+    const user = await User.findById(userId).select("fullName profilePic");
+    if (!user) return;
+    socket.user = { _id: user._id, fullName: user.fullName, profilePic: user.profilePic };
+
+    socket.on("joinGroups", (groupIds) => {
+        groupIds.forEach(groupId => {
+            socket.join(groupId);
+            console.log("Socket joined rooms:", groupIds);
+        });
+    });
+
+    handleTyping(socket, io);
 
     socket.on("disconnect", () => {
         console.log("A user disconnected", socket.id);
@@ -35,4 +49,4 @@ io.on("connection", (socket) => {
     });
 });
 
-export {io,app,server}
+export { io, app, server }
