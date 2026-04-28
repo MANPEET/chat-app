@@ -67,6 +67,7 @@ export const useChatStore = create((set,get) => ({
 
         socket.off("newMessage")
         socket.off("newGroupMessage")
+        socket.off("messageDelivered")
 
         socket.on("newMessage", (message) => {
             const authUser = useAuthStore.getState().authUser
@@ -89,6 +90,14 @@ export const useChatStore = create((set,get) => ({
                 }));
             }
         });
+
+        socket.on("messageDelivered", ({messageId}) => {
+            set((state) => ({
+                messages: state.messages.map((msg) => {
+                    msg._id === messageId ? {...msg, isDelivered: true} : msg
+                })
+            }))
+        })
     },
 
     unsubscribeFromMessages: () => {

@@ -1,7 +1,7 @@
 import {Server} from "socket.io"
 import express from "express"
 import http from "http"
-import { handleTyping } from "../controllers/message.controller.js"
+import { handleDelivery, handleTyping } from "../controllers/message.controller.js"
 import User from "../models/userSchema.js"
 
 const app = express()
@@ -41,6 +41,8 @@ io.on("connection", async (socket) => {
     });
 
     handleTyping(socket, io);
+
+    handleDelivery(socket, io);
 
     socket.on("disconnect", () => {
         console.log("A user disconnected", socket.id);
