@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useDebugValue, useEffect, useRef, useState } from "react"
 import useChatStore from "../store/useChatStore"
 import ChatHeader from "./ChatHeader"
 import MessageInput from "./MessageInput"
@@ -48,6 +48,13 @@ const ChatContainer = () => {
             messageEndRef.current.scrollIntoView({ behavior: "smooth" })
         }
     }, [messages])
+
+    useEffect(() => {
+        if(!socket || !selectedUsers._id) return;
+
+        socket.on("markMessageAsRead", {chatId : selectedUsers._id})
+
+    }, [socket, selectedUsers?._id])
 
     useEffect(() => {
         if (!socket) return;

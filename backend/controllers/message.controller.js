@@ -148,20 +148,20 @@ export const handleTyping = (socket, io) => {
   });
 };
 
-export const handleDelivery = (socket, io) => {
+export const handleDelivery = async(socket, io) => {
   const userId = socket.handshake.query.userId
 
   if(!userId) return
 
   //We are finding all the unread messages for userId, userId is the id for the person who is currently logged in
-  const unreadMessages = await Message.find({
+  const unDeliveredMessages = await Message.find({
     receiverId: userId,
     isDelivered: false,
     group: null
   })
 
   //Now we found all the messages so let's mark them as delivered since the user is not logged in now.
-  for (const message of unreadMessages){
+  for (const message of unDeliveredMessages){
     message.isDelivered = true
     await message.save();
 
@@ -176,5 +176,33 @@ export const handleDelivery = (socket, io) => {
       })
     }
   }
+
+  socket.on("markMessageAsRead", async({chatId}) => {
+
+    //You are fetching the messages which was sent to you by the chatId user, chatId is the other person's Id with whom you are
+    //chatting and userId is yours Id (the person logged in the application currently).
+
+    const unreadMessages = await Message.find({
+      senderId: chatId,
+      receiverId: userId,
+      readAt: null,
+      group: null    // Only for 1on1 chat
+    })
+
+    const now = new Date();
+    for(const message of unreadMessages){
+      message.readAt = now;
+      message.isDelivered = true;  // If let's say the message is not delivered
+      await message.save()
+
+      const senderSocketId = await getReceiverSocketId(message.senderId?.toString())
+
+      //Now letting the sender know hey this person just seen your message
+      io.to(senderSocketId).emit("messageRead", {
+        messageId: message._id,
+        readAt: now,
+      })
+    }
+  })
 }
 
