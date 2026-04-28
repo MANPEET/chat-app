@@ -28,7 +28,23 @@ const messageSchema = mongoose.Schema({
     group:{
         type:mongoose.Schema.Types.ObjectId,
         ref: "Group"
+    },
+
+    //1 on 1 chat
+    isDelivered : { type: Boolean, default: false },
+    readAt: { type: Date, default: null },
+
+    //GroupChat
+    deliveredAt: {
+        user: { type: mongoose.Schema.Types.ObjectId, ref:"User"},
+        at: {type: Date}
+    },
+
+    readBy: {
+        user: { type: mongoose.Schema.Types.ObjectId, ref:"User"},
+        readAt: {type: Date}
     }
+
 }, { timestamps: true });
 
 const Message = mongoose.model("Message", messageSchema);
