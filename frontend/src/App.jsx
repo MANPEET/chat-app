@@ -11,15 +11,33 @@ import "./index.css"
 import { Toaster } from 'react-hot-toast'
 import Navbar from './components/Navbar.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
+import useChatStore from './store/useChatStore.js'
 
 function App() {
 
-  const {authUser,checkAuth,isCheckingAuth,onlineUsers} = useAuthStore()
+  const {authUser,checkAuth,isCheckingAuth,onlineUsers,socket} = useAuthStore()
 
 
   useEffect(() =>{
     checkAuth()
   },[checkAuth])
+
+  useEffect(() => {
+    if (!socket) return;
+
+    // ✅ wait for socket to actually connect before subscribing
+    if (socket.connected) {
+        useChatStore.getState().subscribeToMessages()
+    } else {
+        socket.on("connect", () => {
+            useChatStore.getState().subscribeToMessages()
+        })
+    }
+
+    return () => {
+        socket.off("connect")
+    }
+}, [socket])
 
 
   if (isCheckingAuth && !authUser)

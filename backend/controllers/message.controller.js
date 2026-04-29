@@ -224,3 +224,25 @@ export const handleDelivery = async(socket, io) => {
   })
 }
 
+export const getUnreadMessagesCount = async (req, res) => {
+    const { senderId } = req.params;
+    const userId = req.user._id; 
+
+    if (!userId || !senderId) return res.json({ count: 0 });
+
+    try {
+        const count = await Message.countDocuments({
+            receiverId: userId,
+            senderId: senderId,
+            readAt: null,
+            isDelivered: true,
+            group: null
+        });
+
+        res.json({ count });
+    } catch (error) {
+        console.error("Error getting unread count:", error);
+        res.status(500).json({ count: 0 });
+    }
+}
+

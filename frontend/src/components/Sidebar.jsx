@@ -7,18 +7,27 @@ import useGroupStore from "../store/useGroupStore";
 import { useState } from "react";
 import { AddGroup } from "./Groups/AddGroup";
 
+
 const Sidebar = () => {
 
-    const {selectedUsers,getUsers,users,setSelectedUsers} = useChatStore();
-    const {onlineUsers} = useAuthStore()
+    const {selectedUsers,getUsers,users,setSelectedUsers,messages, unreadMessages, getUnreadMessages} = useChatStore();
+    const {onlineUsers, authUser} = useAuthStore()
     const {getGroups,groups,showAddGroupDialog,setShowAddGroupDialog} = useGroupStore()
 
     useEffect(() =>{
         getGroups()
         getUsers()
+
     },[getUsers,getGroups])
 
+    useEffect(() => {
+        if (!authUser?._id || users.length === 0) return;
+        users.forEach(user => {
+            getUnreadMessages( user._id)
+        })
+    }, [users])
 
+   
     return(
         <>
             <aside className="h-full w-20 lg:w-72 border-r border-base-300 flex flex-col transition-all duration-200">
@@ -46,6 +55,8 @@ const Sidebar = () => {
             
             <div className=" pb-3 w-full min-w-0 overflow-y-scroll">
                 {(users).map((item,index) =>{
+
+                    const count = unreadMessages[item._id] || 0;
                     return(
                         <div
                         className={`flex justify-between p-3 items-center hover:bg-base-300 ${selectedUsers?._id === item._id ? "bg-base-300 ring-1 ring-base-300" : "" }`}
@@ -72,7 +83,16 @@ const Sidebar = () => {
                                         {onlineUsers.includes(item._id) ? "Online" : "Offline"}
                                     </div>
                                 </div>
+
                             </button>
+
+                            {count > 0 && selectedUsers?._id !== item._id && (
+                                <div>
+                                    <span className="hidden lg:flex min-w-5 h-5 px-1 bg-primary rounded-full text-white text-xs items-center justify-center">
+                                        {count}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                         
                     )   

@@ -6,6 +6,7 @@ import { useAuthStore } from "./useAuthStore";
 export const useChatStore = create((set,get) => ({
     messages:[],
     users:[],
+    unreadMessages: {},
     isUsersLoading:false,
     isMessagesLoading: false,
     selectedUsers: null,
@@ -42,8 +43,7 @@ export const useChatStore = create((set,get) => ({
         try {
             const res = await axiosInstance.post(`/messages/send/${selectedUsers._id}`, messageData);
 
-            // If backend doesn't return a populated sender, manually attach authUser
-            // so audio/image messages render immediately without needing a refresh
+            
             const populatedMessage = {
                 ...res.data,
                 sender: res.data.sender?._id
@@ -62,6 +62,21 @@ export const useChatStore = create((set,get) => ({
         }
     },
 
+    getUnreadMessages: async ( senderId) => {
+        if ( !senderId) return;
+        try {
+            const res = await axiosInstance.get(`/messages/unread-message/${senderId}`)
+
+            set((state) => ({
+                unreadMessages : {
+                    ...state.unreadMessages, [senderId] : res.data.count
+                }
+            }))
+        } catch (error) {
+            toast.error(error.response.data.message)
+        }
+    },
+
     subscribeToMessages: () => {
         const socket = useAuthStore.getState().socket;
 
@@ -71,11 +86,20 @@ export const useChatStore = create((set,get) => ({
         socket.off("messageRead")
 
         socket.on("newMessage", (message) => {
-            const authUser = useAuthStore.getState().authUser
+            const authUser = useAuthStore.getState().authUser   
             const selectedUsers = get().selectedUsers
 
             if (message.sender._id === authUser._id) return
-            if (String(message.sender._id) !== String(selectedUsers._id)) return
+
+            if (String(message.sender._id) !== String(selectedUsers?._id)){
+                set((state) => ({
+                    unreadMessages : {
+                        ...state.unreadMessages, [message.sender._id]: (state.unreadMessages[message.sender._id] || 0) + 1
+                    }
+                }))
+                return
+            }
+
 
             set((state) => ({
                 messages: [...state.messages, message],
@@ -117,7 +141,13 @@ export const useChatStore = create((set,get) => ({
         socket.off("newGroupMessage")
     },
 
-    setSelectedUsers: (selectedUsers) => set({selectedUsers}),
+    setSelectedUsers: (selectedUsers) => set((state) =>({
+        selectedUsers,
+
+        unreadMessages: {
+            ...state.unreadMessages , [selectedUsers._id] : 0
+        }
+    })),
     setIsTyping: (isTyping) => set({isTyping}),
     setGroupScreenLoaded: (groupScreenLoaded) => set({groupScreenLoaded})
 }))

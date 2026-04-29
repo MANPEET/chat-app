@@ -48,7 +48,7 @@ const ChatContainer = () => {
         if (messageEndRef.current && messages) {
             messageEndRef.current.scrollIntoView({ behavior: "smooth" })
         }
-    }, [messages])
+    }, [messages, typingUsers])
 
     useEffect(() => {
         if(!socket || !selectedUsers._id) return;
