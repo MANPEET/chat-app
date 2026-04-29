@@ -80,6 +80,8 @@ export const useChatStore = create((set,get) => ({
             set((state) => ({
                 messages: [...state.messages, message],
             }));
+
+            socket.emit("markMessageAsRead", { chatId: selectedUsers._id })
         });
 
         socket.on("newGroupMessage", (message) => {
