@@ -11,7 +11,39 @@ export const getGroups = async(req,res) => {
 
         const groups = await Group.find({members: userId}).populate("members", "_id fullName profilePic");
 
-        return res.status(200).json(groups)
+        const groupsWithLastMessage = await Promise.all(
+            groups.map(async(group) => {
+                const lastMessage = await Message.findOne({
+                    group: group._id
+                })
+                .sort({createdAt: -1})
+                .select("text image audio senderId createdAt")
+                .populate("senderId", "fullName")
+
+                return {
+                    ...group.toObject(),
+                    lastMessage: lastMessage ? {
+                        text: lastMessage.text || null,
+                        image: lastMessage.image ? true : false,
+                        audio: lastMessage.audio ? true : false,
+                        senderId: lastMessage.senderId._id,
+                        senderName: lastMessage.senderId.fullName,
+                        createdAt: lastMessage.createdAt,
+                    }
+                    : null
+                }
+            }) 
+        )
+
+        groupsWithLastMessage.sort((a,b) => {
+            if(!a.lastMessage && !b.lastMessage) return 0
+            if(!a.lastMessage) return 1
+            if(!b.lastMessage) return -1
+
+            return new Date(b.lastMessage.createdAt) - new Date(a.lastMessage.createdAt)
+        })
+
+        return res.status(200).json(groupsWithLastMessage)
     } catch (error) {
         console.error("Error in getGroups",error.message)
         return res.status(400).json(error.message)

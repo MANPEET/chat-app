@@ -9,8 +9,44 @@ export const getUsersForSidebar = async (req, res) => {
     try {
       const loggedInUserId = req.user._id;
       const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select("-password");
+
+      const usersWithLastMessage = await Promise.all(
+        filteredUsers.map(async(user) => {
+          const lastMessage = await Message.findOne({
+            $or:[
+              {senderId : loggedInUserId, receiverId: user._id},
+              {senderId: user._id, receiverId: loggedInUserId}
+            ],
+            group: null
+          })
+          .sort({createdAt: -1}) //Descending
+          .select("text image audio createdAt senderId isDelivered readAt")
+
+          return {
+            ...user.toObject(),
+            lastMessage: lastMessage ? {
+              text: lastMessage.text || null,
+              image: lastMessage.image ? true : false,  
+              audio: lastMessage.audio ? true : false,
+              senderId: lastMessage.senderId,
+              createdAt: lastMessage.createdAt,
+              isDelivered: lastMessage.isDelivered,
+              readAt: lastMessage.readAt,
+            }
+            : null
+          }
+        })
+      )
+
+      usersWithLastMessage.sort((a,b) => {
+        if(!a.lastMessage && !b.lastMessage) return 0
+        if(!a.lastMessage) return 1
+        if(!b.lastMessage) return -1
+
+        return new Date(b.lastMessage.createdAt) - new Date(a.lastMessage.createdAt)
+      })
   
-      res.status(200).json(filteredUsers);
+      res.status(200).json(usersWithLastMessage);
     } catch (error) {
       console.error("Error in getUsersForSidebar: ", error.message);
       res.status(500).json({ error: "Internal server error" });
