@@ -1,5 +1,6 @@
 import cloudinary from "../lib/cloudinary.js"
 import { getReceiverSocketId, io } from "../lib/socket.js"
+import Group from "../models/groupSchema.js";
 
 import Message from "../models/messageSchema.js"
 import User from "../models/userSchema.js"
@@ -143,7 +144,7 @@ export const sendMessage = async (req, res) => {
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", formattedMessage);
 
-      const senderSocketId = getReceiverSocketId(populatedMessage.senderId.toString())
+      const senderSocketId = getReceiverSocketId(senderId.toString())
       if(senderSocketId){
         io.to(senderSocketId).emit("messageDelivered", {
           messageId: newMessage._id
@@ -203,62 +204,142 @@ export const handleTyping = (socket, io) => {
 };
 
 export const handleDelivery = async(socket, io) => {
-  const userId = socket.handshake.query.userId
+  const userId = socket.handshake.query.userId;
+  if (!userId) return;
 
-  if(!userId) return
-
-  //We are finding all the unread messages for userId, userId is the id for the person who is currently logged in
+  // ── 1-on-1 undelivered messages (unchanged) ──────────────────────────────
   const unDeliveredMessages = await Message.find({
     receiverId: userId,
     isDelivered: false,
     group: null
-  })
+  });
 
-  //Now we found all the messages so let's mark them as delivered since the user is not logged in now.
-  for (const message of unDeliveredMessages){
-    message.isDelivered = true
+  for (const message of unDeliveredMessages) {
+    message.isDelivered = true;
     await message.save();
 
-    //We are fetching the socketId for the sender
-    const senderSocketId =  getReceiverSocketId(message.senderId.toString())
-
-    if(senderSocketId){
-      
-      // We are letting the sender know that your message was delivered to the receiver now.
-      io.to(senderSocketId).emit("messageDelivered", {
-        messageId: message._id
-      })
+    const senderSocketId = getReceiverSocketId(message.senderId.toString());
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("messageDelivered", { messageId: message._id });
     }
   }
 
-  socket.on("markMessageAsRead", async({chatId}) => {
+  // ── FIX 1: Group undelivered messages when user comes online ─────────────
+  const undeliveredGroupMessages = await Message.find({
+    group: { $ne: null },
+    "deliveredTo.user": { $ne: userId },
+    senderId: { $ne: userId }
+  });
 
-    //You are fetching the messages which was sent to you by the chatId user, chatId is the other person's Id with whom you are
-    //chatting and userId is yours Id (the person logged in the application currently).
+  const now = new Date();
 
+  for (const message of undeliveredGroupMessages) {
+    message.deliveredTo.push({ user: userId, at: now });
+    await message.save();
+
+    // Fetch group to know total member count
+    const group = await Group.findById(message.group);
+    if (!group) continue;
+
+    const otherMemberCount = group.members.filter(
+      m => m.toString() !== message.senderId.toString()
+    ).length;
+
+    const allDelivered = message.deliveredTo.length >= otherMemberCount;
+
+    console.log("[DELIVERY CHECK]", {
+        messageId: message._id,
+        deliveredToLength: message.deliveredTo.length,
+        otherMemberCount,
+        allDelivered,
+        senderOnline: !!getReceiverSocketId(message.senderId.toString())
+    });
+
+    const senderSocketId = getReceiverSocketId(message.senderId.toString());
+    if (senderSocketId && allDelivered) {
+      io.to(senderSocketId).emit("groupMessageDelivered", {
+        messageId: message._id,
+        userId,
+        at: now
+      });
+    }
+  }
+
+  // ── 1-on-1 mark as read (unchanged) ──────────────────────────────────────
+  socket.on("markMessageAsRead", async ({ chatId }) => {
     const unreadMessages = await Message.find({
       senderId: chatId,
       receiverId: userId,
       readAt: null,
-      group: null    // Only for 1on1 chat
-    })
+      group: null
+    });
 
     const now = new Date();
-    for(const message of unreadMessages){
+    for (const message of unreadMessages) {
       message.readAt = now;
-      message.isDelivered = true;  // If let's say the message is not delivered
-      await message.save()
+      message.isDelivered = true;
+      await message.save();
 
-      const senderSocketId =  getReceiverSocketId(message.senderId?.toString())
-
-      //Now letting the sender know hey this person just seen your message
+      const senderSocketId = getReceiverSocketId(message.senderId?.toString());
       io.to(senderSocketId).emit("messageRead", {
         messageId: message._id,
         readAt: now,
-      })
+      });
     }
-  })
-}
+  });
+
+  // ── FIX 2: Blue tick only when ALL members have read ─────────────────────
+  socket.on("markGroupMessageAsRead", async ({ groupId }) => {
+    const unreadMessages = await Message.find({
+        group: groupId,
+        "readBy.user": { $ne: userId },
+        senderId: { $ne: userId }
+    });
+
+    if (!unreadMessages?.length) return;
+
+    const group = await Group.findById(groupId);
+    if (!group) return;
+
+    const now = new Date();
+
+    for (const message of unreadMessages) {
+        message.readBy.push({ user: userId, readAt: now });
+
+        const alreadyDelivered = message.deliveredTo.some(
+            d => d.user.toString() === userId.toString()
+        );
+        if (!alreadyDelivered) {
+            message.deliveredTo.push({ user: userId, at: now });
+        }
+
+        await message.save();
+
+        const senderSocketId = getReceiverSocketId(message.senderId.toString());
+        if (!senderSocketId) continue;
+
+        // ✅ Calculate per-message: exclude THIS message's sender, not unreadMessages[0]'s
+        const otherMemberCount = group.members.filter(
+            m => m.toString() !== message.senderId.toString()
+        ).length;
+
+        const allRead = message.readBy.length >= otherMemberCount;
+
+        if (allRead) {
+            io.to(senderSocketId).emit("groupMessageRead", {
+                messageId: message._id,
+                readAt: now,
+                userId
+            });
+        } else {
+            io.to(senderSocketId).emit("groupMessagePartialRead", {
+                messageId: message._id,
+                readBy: message.readBy
+            });
+        }
+    }
+});
+};
 
 export const getUnreadMessagesCount = async (req, res) => {
     const { senderId } = req.params;

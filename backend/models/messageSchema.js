@@ -35,15 +35,21 @@ const messageSchema = mongoose.Schema({
     readAt: { type: Date, default: null },
 
     //GroupChat
-    deliveredAt: {
-        user: { type: mongoose.Schema.Types.ObjectId, ref:"User"},
-        at: {type: Date}
+    deliveredTo: {
+        type: [{
+            user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+            at: { type: Date }
+        }],
+        default: [] 
     },
 
-    readBy: {
-        user: { type: mongoose.Schema.Types.ObjectId, ref:"User"},
-        readAt: {type: Date}
-    }
+   readBy: {
+        type: [{
+            user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+            readAt: { type: Date }
+        }],
+        default: [] 
+    },
 
 }, { timestamps: true });
 

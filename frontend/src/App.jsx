@@ -25,7 +25,7 @@ function App() {
   useEffect(() => {
     if (!socket) return;
 
-    // ✅ wait for socket to actually connect before subscribing
+  
     if (socket.connected) {
         useChatStore.getState().subscribeToMessages()
     } else {

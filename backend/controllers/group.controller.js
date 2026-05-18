@@ -1,5 +1,5 @@
 import cloudinary from "../lib/cloudinary.js";
-import { io } from "../lib/socket.js";
+import { io, getReceiverSocketId  } from "../lib/socket.js";
 import Group from "../models/groupSchema.js";
 import Message from "../models/messageSchema.js";
 
@@ -80,6 +80,7 @@ export const addGroup = async(req,res) => {
 export const getGroupMessage = async(req,res) => {
     try {
         const {id: groupId} = req.params
+        const userId = req.user?._id
 
         if(!groupId) return res.status(400).json({message: "Invalid Data"})
 
@@ -96,9 +97,12 @@ export const getGroupMessage = async(req,res) => {
             _id: msg._id,
             text: msg.text,
             image: msg.image,
+            audio: msg.audio,
             createdAt: msg.createdAt,
             group: msg.group,
             sender: msg.senderId, 
+            deliveredTo: msg.deliveredTo,
+            readBy: msg.readBy,    
         }));
 
         return res.status(200).json(formattedMessages);
@@ -109,58 +113,105 @@ export const getGroupMessage = async(req,res) => {
     }
 }
 
-export const sendGroupMessage = async(req,res) => {
+export const sendGroupMessage = async(req, res) => {
     try {
-        const {text,image} = req.body;
-        const {id: groupId} = req.params;
-        const senderId = req.user._id
+        const { text, image, audio } = req.body;
+        const { id: groupId } = req.params;
+        const senderId = req.user._id;
 
-
-        if(!groupId || !text ){
-            return res.status(400).json({message: "Invalid Message Data"})
+        if (!groupId || !text) {
+            return res.status(400).json({ message: "Invalid Message Data" });
         }
 
-        const group = await Group.findById(groupId)
+        const group = await Group.findById(groupId);
 
-        if(!group || !group.members.includes(senderId)) 
-            return res.status(400).json({message: "Group doesn't exist or you are not allowed to message in the group"})
+        if (!group || !group.members.includes(senderId))
+            return res.status(400).json({ message: "Group doesn't exist or you are not allowed to message in the group" });
 
         let imageUrl;
-        if(image){
-            const response = await cloudinary.uploader.upload(image)
-            imageUrl = response.secure_url; 
+        if (image) {
+            const response = await cloudinary.uploader.upload(image);
+            imageUrl = response.secure_url;
+        }
+
+        let audioUrl;
+        if (audio) {
+            const response = await cloudinary.uploader.upload(audio, {
+                resource_type: "video",
+                folder: "audio_messages"
+            });
+            audioUrl = response.secure_url;
+        }
+
+        const now = new Date();
+
+        // ✅ Pre-populate deliveredTo with ALL members who are online right now
+        const initialDeliveredTo = [{ user: senderId, at: now }]; // sender always included
+
+        for (const memberId of group.members) {
+            if (memberId.toString() === senderId.toString()) continue; // skip sender
+
+            const memberSocketId = getReceiverSocketId(memberId.toString());
+            if (memberSocketId) {
+                // This member is online — mark as delivered immediately
+                initialDeliveredTo.push({ user: memberId, at: now });
+            }
         }
 
         const groupMessage = new Message({
             senderId,
             text,
-            image:imageUrl,
+            image: imageUrl,
+            audio: audioUrl,
             receivers: group.members,
-            group:group._id
-        })
+            group: group._id,
+            deliveredTo: initialDeliveredTo,          // ✅ all online members included
+            readBy: [{ user: senderId, readAt: now }], // sender has "read" their own message
+        });
 
-        if(groupMessage){
-            await groupMessage.save();
+        await groupMessage.save();
 
-            const populatedMessage = await Message.findById(groupMessage._id)
-                .populate("senderId", "fullName profilePic");
+        const populatedMessage = await Message.findById(groupMessage._id)
+            .populate("senderId", "fullName profilePic");
 
-            const formattedMessage = {
-                _id: populatedMessage._id,
-                text: populatedMessage.text,
-                image: populatedMessage.image,
-                createdAt: populatedMessage.createdAt,
-                group: populatedMessage.group,
-                sender: populatedMessage.senderId, 
-            };
+        const formattedMessage = {
+            _id: populatedMessage._id,
+            text: populatedMessage.text,
+            image: populatedMessage.image,
+            audio: populatedMessage.audio,
+            createdAt: populatedMessage.createdAt,
+            group: populatedMessage.group,
+            sender: populatedMessage.senderId,
+            deliveredTo: populatedMessage.deliveredTo,
+            readBy: populatedMessage.readBy,
+        };
 
-            io.to(groupId).emit("newGroupMessage", formattedMessage)
-            return res.status(200).json(formattedMessage)
+        io.to(groupId).emit("newGroupMessage", formattedMessage);
+
+        // ✅ Check if all members are already online → emit delivered immediately
+        const otherMembers = group.members.filter(
+            m => m.toString() !== senderId.toString()
+        );
+        const allDelivered = otherMembers.every(
+            m => getReceiverSocketId(m.toString())
+        );
+
+        if (allDelivered) {
+            const senderSocketId = getReceiverSocketId(senderId.toString());
+            if (senderSocketId) {
+                io.to(senderSocketId).emit("groupMessageDelivered", {
+                    messageId: groupMessage._id,
+                    userId: senderId,
+                    at: now
+                });
+            }
         }
-    } 
-    catch (error) {
-        console.error(error)
-        return res.status(500).json({message: "Internal Server Error"});
+
+        return res.status(200).json(formattedMessage);
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: "Internal Server Error" });
     }
-}
+};
 
