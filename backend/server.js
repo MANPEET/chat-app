@@ -22,7 +22,7 @@ app.use(
         origin: [
             "http://localhost:5173",
             "https://chat-app-2-tgg1.onrender.com",
-            "https://chat-app-zg5h.vercel.app/"
+            "https://chat-app-zg5h.vercel.app"
         ],
         credentials: true,
     })
